@@ -430,7 +430,6 @@ const searchProfiles = async (req, res) => {
 const getProfileById = async (req, res) => {
   try {
     const { id } = req.params
-    
 
     const foundData = await Profile.findOne({ id })
 

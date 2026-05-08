@@ -53,17 +53,16 @@ app.use(express.json())
 
 const isProduction = process.env.NODE_ENV === 'production' || process.env.ENVIRONMENT === 'production'
 
-// Only use file logging in development (Vercel has read-only filesystem)
-let morganMiddleware
+// In development, write request logs to both the console and a local file.
+// In production/serverless, keep console logging only because the filesystem may be read-only.
+const morganMiddlewares = [morgan('combined')]
 if (!isProduction) {
   const accessLogPath = path.join(__dirname, 'access.log')
   const accessLogStream = fs.createWriteStream(accessLogPath, { flags: 'a' })
-  morganMiddleware = morgan('combined', { stream: accessLogStream })
-} else {
-  morganMiddleware = morgan('combined')
+  morganMiddlewares.push(morgan('combined', { stream: accessLogStream }))
 }
 
-app.use(morganMiddleware)
+morganMiddlewares.forEach((middleware) => app.use(middleware))
 
 const connectDB = async () => {
   if (!process.env.MONGODB_URI) {

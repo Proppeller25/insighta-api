@@ -1,7 +1,7 @@
 const crypto = require('crypto')
 const jwt = require('jsonwebtoken')
 const User = require('../models/userModel')
-const { setCsrfCookies, clearCsrfCookies } = require('../middleware/csrf')
+const { setCsrfCookies, clearCsrfCookies, getCsrfToken } = require('../middleware/csrf')
 require('dotenv').config()
 
 const getGithubClientId = () => process.env.GITHUB_CLIENT_ID || 'github-client-id'
@@ -11,14 +11,23 @@ const getGithubRedirectUri = () =>
 const getJwtSecret = () => process.env.JWT_SECRET
 const WEB_SUCCESS_REDIRECT = process.env.WEB_SUCCESS_REDIRECT || '/'
 
-const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '1h'
-const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d'
+const ACCESS_TOKEN_EXPIRES_IN = process.env.ACCESS_TOKEN_EXPIRES_IN || '5m'
+const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '3m'
 const ACCESS_TOKEN_COOKIE_MAX_AGE =
-  Number(process.env.ACCESS_TOKEN_COOKIE_MAX_AGE_MS) || 60 * 60 * 1000
+  Number(process.env.ACCESS_TOKEN_COOKIE_MAX_AGE_MS) || 5 * 60 * 1000
 const REFRESH_TOKEN_COOKIE_MAX_AGE =
-  Number(process.env.REFRESH_TOKEN_COOKIE_MAX_AGE_MS) || 7 * 24 * 60 * 60 * 1000
+  Number(process.env.REFRESH_TOKEN_COOKIE_MAX_AGE_MS) || 3 * 60 * 1000
 const OAUTH_PENDING_COOKIE_NAME = 'oauth_pending'
 const OAUTH_STATE_COOKIE_MAX_AGE = 10 * 60 * 1000
+
+const parseEnvList = (value) =>
+  String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+
+const getAdminGithubIds = () => parseEnvList(process.env.ADMIN_GITHUB_IDS)
+const getAdminGithubEmails = () => parseEnvList(process.env.ADMIN_GITHUB_EMAILS)
 
 const ensureGithubOAuthConfig = () => {
   if (!process.env.GITHUB_CLIENT_ID || !process.env.GITHUB_CLIENT_SECRET || !process.env.GITHUB_REDIRECT_URI) {
@@ -272,6 +281,10 @@ const findOrCreateUserFromGithub = async (githubUser) => {
   const githubId = String(githubUser.id)
   const username = githubUser.login
   const email = githubUser.email || `${username}@users.noreply.github.com`
+  const emailKey = email.toLowerCase()
+  const adminGithubIds = getAdminGithubIds()
+  const adminGithubEmails = getAdminGithubEmails()
+  const shouldBeAdmin = adminGithubIds.includes(githubId.toLowerCase()) || adminGithubEmails.includes(emailKey)
 
   let user = await User.findOne({ github_id: githubId })
 
@@ -281,12 +294,16 @@ const findOrCreateUserFromGithub = async (githubUser) => {
       username,
       email,
       avatar_url: githubUser.avatar_url,
+      role: shouldBeAdmin ? 'admin' : 'analyst',
       is_active: true
     })
   } else {
     user.username = username
     user.email = email
     user.avatar_url = githubUser.avatar_url
+    if (shouldBeAdmin) {
+      user.role = 'admin'
+    }
     user.is_active = true
   }
 
@@ -485,6 +502,22 @@ const refreshToken = async (req, res) => {
   }
 }
 
+const issueCsrfToken = async (req, res) => {
+  try {
+    const csrfToken = getCsrfToken(req, res)
+
+    return res.status(200).json({
+      status: 'success',
+      csrfToken
+    })
+  } catch (error) {
+    return res.status(500).json({
+      status: 'error',
+      message: error.message || 'Unable to issue CSRF token'
+    })
+  }
+}
+
 const logout = async (req, res) => {
   try {
     const incomingRefreshToken =
@@ -624,6 +657,7 @@ module.exports = {
   redirectToGithub,
   githubCallback,
   refreshToken,
+  issueCsrfToken,
   logout,
   cliLoginWithToken,
   cliOAuthCallback,

@@ -7,6 +7,7 @@ const {
   redirectToGithub,
   githubCallback,
   refreshToken,
+  issueCsrfToken,
   logout,
   cliLoginWithToken,
   cliOAuthCallback,
@@ -62,13 +63,18 @@ router.route('/auth/refresh')
   .post(verifyCsrfToken, refreshToken)
   .all(methodNotAllowed(['POST']))
 
+router.route('/auth/csrf')
+  .options((req, res) => res.sendStatus(204))
+  .get(ensureCsrfSecret, issueCsrfToken)
+  .all(methodNotAllowed(['GET']))
+
 router.route('/auth/logout')
   .options((req, res) => res.sendStatus(204))
-  .post(verifyCsrfToken, logout)
+  .post(verifyCsrfToken, auth, logout)
   .all(methodNotAllowed(['POST']))
-router.post('/auth/cli/login', cliLoginWithToken);
-router.post('/auth/cli/callback', cliOAuthCallback);
-router.get('/auth/me', auth, getCurrentUser);
+router.post('/auth/cli/login', cliLoginWithToken)
+router.post('/auth/cli/callback', cliOAuthCallback)
+router.get('/auth/me', auth, getCurrentUser)
 
 // 👇 Add the missing endpoint required by tests
 router.get('/users/me', auth, getCurrentUser);
